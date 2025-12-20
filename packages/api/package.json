@@ -1,0 +1,28 @@
+{
+  "name": "@Vinnodrive/api",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "devDependencies": {
+    "typescript": "catalog:",
+    "@Vinnodrive/config": "workspace:*"
+  },
+  "dependencies": {
+    "@trpc/server": "catalog:",
+    "@trpc/client": "catalog:",
+    "hono": "catalog:",
+    "drizzle-orm": "catalog:",
+    "@types/pg": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:",
+    "@Vinnodrive/auth": "workspace:*",
+    "@Vinnodrive/db": "workspace:*"
+  }
+}
