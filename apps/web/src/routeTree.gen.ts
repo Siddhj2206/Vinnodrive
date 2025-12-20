@@ -17,6 +17,7 @@ import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as ShareShareIdRouteImport } from './routes/share.$shareId'
 import { Route as DashboardTrashRouteImport } from './routes/dashboard/trash'
 import { Route as DashboardSharedRouteImport } from './routes/dashboard/shared'
+import { Route as DashboardAccountRouteImport } from './routes/dashboard/account'
 import { Route as DashboardFolderFolderIdRouteImport } from './routes/dashboard/folder/$folderId'
 
 const TodosRoute = TodosRouteImport.update({
@@ -59,6 +60,11 @@ const DashboardSharedRoute = DashboardSharedRouteImport.update({
   path: '/shared',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardAccountRoute = DashboardAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardFolderFolderIdRoute = DashboardFolderFolderIdRouteImport.update({
   id: '/folder/$folderId',
   path: '/folder/$folderId',
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/todos': typeof TodosRoute
+  '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/shared': typeof DashboardSharedRoute
   '/dashboard/trash': typeof DashboardTrashRoute
   '/share/$shareId': typeof ShareShareIdRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/todos': typeof TodosRoute
+  '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/shared': typeof DashboardSharedRoute
   '/dashboard/trash': typeof DashboardTrashRoute
   '/share/$shareId': typeof ShareShareIdRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/todos': typeof TodosRoute
+  '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/shared': typeof DashboardSharedRoute
   '/dashboard/trash': typeof DashboardTrashRoute
   '/share/$shareId': typeof ShareShareIdRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/todos'
+    | '/dashboard/account'
     | '/dashboard/shared'
     | '/dashboard/trash'
     | '/share/$shareId'
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/todos'
+    | '/dashboard/account'
     | '/dashboard/shared'
     | '/dashboard/trash'
     | '/share/$shareId'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/todos'
+    | '/dashboard/account'
     | '/dashboard/shared'
     | '/dashboard/trash'
     | '/share/$shareId'
@@ -199,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSharedRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/account': {
+      id: '/dashboard/account'
+      path: '/account'
+      fullPath: '/dashboard/account'
+      preLoaderRoute: typeof DashboardAccountRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/folder/$folderId': {
       id: '/dashboard/folder/$folderId'
       path: '/folder/$folderId'
@@ -210,6 +229,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface DashboardRouteChildren {
+  DashboardAccountRoute: typeof DashboardAccountRoute
   DashboardSharedRoute: typeof DashboardSharedRoute
   DashboardTrashRoute: typeof DashboardTrashRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -217,6 +237,7 @@ interface DashboardRouteChildren {
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
+  DashboardAccountRoute: DashboardAccountRoute,
   DashboardSharedRoute: DashboardSharedRoute,
   DashboardTrashRoute: DashboardTrashRoute,
   DashboardIndexRoute: DashboardIndexRoute,

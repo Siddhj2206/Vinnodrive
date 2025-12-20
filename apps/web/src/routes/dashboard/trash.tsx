@@ -1,9 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { File, Folder, RotateCcw, Search, Trash2 } from "lucide-react";
+import { File, Folder, RotateCcw, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
-import { ModeToggle } from "@/components/mode-toggle";
+import { DashboardHeader } from "@/components/dashboard/header";
 import { StorageInvalidations } from "@/utils/invalidate";
 import {
   AlertDialog,
@@ -16,16 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/dashboard/trash")({
@@ -58,6 +50,7 @@ function formatDate(date: Date | string | null): string {
 function TrashView() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Query trashed items - use cached data from loader
   const trashQuery = useQuery(trpc.storage.listTrash.queryOptions());
@@ -124,35 +117,28 @@ function TrashView() {
     })
   );
 
-  const trashedFiles = trashQuery.data?.files || [];
-  const trashedFolders = trashQuery.data?.folders || [];
+  const allTrashedFiles = trashQuery.data?.files || [];
+  const allTrashedFolders = trashQuery.data?.folders || [];
+
+  // Filter based on search query
+  const searchLower = searchQuery.toLowerCase();
+  const trashedFiles = searchQuery
+    ? allTrashedFiles.filter((file) => file.name.toLowerCase().includes(searchLower))
+    : allTrashedFiles;
+  const trashedFolders = searchQuery
+    ? allTrashedFolders.filter((folder) => folder.name.toLowerCase().includes(searchLower))
+    : allTrashedFolders;
   const totalItems = trashedFiles.length + trashedFolders.length;
+  const totalAllItems = allTrashedFiles.length + allTrashedFolders.length;
 
   return (
     <>
-      {/* Header */}
-      <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-        <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="mr-2 h-4" />
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbPage>Trash</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="text-muted-foreground absolute left-2.5 top-2.5 h-4 w-4" />
-            <Input
-              type="search"
-              placeholder="Search trash..."
-              className="w-64 pl-8"
-            />
-          </div>
-          <ModeToggle />
-        </div>
-      </header>
+      <DashboardHeader
+        breadcrumbs={[{ label: "Trash" }]}
+        searchPlaceholder="Search trash..."
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
@@ -166,7 +152,7 @@ function TrashView() {
               </span>
             )}
           </p>
-          {totalItems > 0 && (
+          {totalAllItems > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive">
@@ -178,7 +164,7 @@ function TrashView() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Empty Trash</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will permanently delete all {totalItems} item(s)
+                    This will permanently delete all {totalAllItems} item(s)
                     in trash. This action cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
@@ -321,10 +307,21 @@ function TrashView() {
           {totalItems === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Trash2 className="text-muted-foreground mb-4 h-12 w-12" />
-              <h3 className="text-lg font-semibold">Trash is empty</h3>
-              <p className="text-muted-foreground">
-                Files and folders you delete will appear here
-              </p>
+              {searchQuery ? (
+                <>
+                  <h3 className="text-lg font-semibold">No results found</h3>
+                  <p className="text-muted-foreground">
+                    No items in trash match "{searchQuery}"
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold">Trash is empty</h3>
+                  <p className="text-muted-foreground">
+                    Files and folders you delete will appear here
+                  </p>
+                </>
+              )}
             </div>
           )}
         </div>

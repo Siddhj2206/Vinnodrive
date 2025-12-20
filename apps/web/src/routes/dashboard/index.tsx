@@ -7,7 +7,6 @@ import {
   FolderPlus,
   MoreHorizontal,
   Pencil,
-  Search,
   Share2,
   Trash2,
   Upload,
@@ -16,7 +15,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { FileUpload } from "@/components/dashboard/file-upload";
-import { ModeToggle } from "@/components/mode-toggle";
+import { DashboardHeader } from "@/components/dashboard/header";
 import { StorageInvalidations } from "@/utils/invalidate";
 import {
   AlertDialog,
@@ -28,12 +27,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -53,8 +46,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Switch } from "@/components/ui/switch";
 import { useTRPC } from "@/utils/trpc";
 
@@ -112,6 +103,7 @@ function DashboardIndex() {
     publicShareId: string | null;
   } | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Queries - use cached data from loader
   const filesQuery = useQuery(trpc.storage.listFiles.queryOptions());
@@ -241,34 +233,26 @@ function DashboardIndex() {
   };
 
   const stats = statsQuery.data;
-  const files = filesQuery.data?.files || [];
-  const folders = filesQuery.data?.folders || [];
+  const allFiles = filesQuery.data?.files || [];
+  const allFolders = filesQuery.data?.folders || [];
+
+  // Filter files and folders based on search query
+  const searchLower = searchQuery.toLowerCase();
+  const files = searchQuery
+    ? allFiles.filter((file) => file.name.toLowerCase().includes(searchLower))
+    : allFiles;
+  const folders = searchQuery
+    ? allFolders.filter((folder) => folder.name.toLowerCase().includes(searchLower))
+    : allFolders;
 
   return (
     <>
-      {/* Header */}
-      <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-        <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="mr-2 h-4" />
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbPage>All Files</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="text-muted-foreground absolute left-2.5 top-2.5 h-4 w-4" />
-            <Input
-              type="search"
-              placeholder="Search files..."
-              className="w-64 pl-8"
-            />
-          </div>
-          <ModeToggle />
-        </div>
-      </header>
+      <DashboardHeader
+        breadcrumbs={[{ label: "All Files" }]}
+        searchPlaceholder="Search files..."
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
@@ -473,20 +457,31 @@ function DashboardIndex() {
           {folders.length === 0 && files.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Folder className="text-muted-foreground mb-4 h-12 w-12" />
-              <h3 className="text-lg font-semibold">No files yet</h3>
-              <p className="text-muted-foreground mb-4">
-                Upload files or create a folder to get started
-              </p>
-              <div className="flex gap-2">
-                <Button onClick={() => setCreateFolderOpen(true)}>
-                  <FolderPlus className="mr-2 h-4 w-4" />
-                  New Folder
-                </Button>
-                <Button variant="outline" onClick={() => setUploadDialogOpen(true)}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload
-                </Button>
-              </div>
+              {searchQuery ? (
+                <>
+                  <h3 className="text-lg font-semibold">No results found</h3>
+                  <p className="text-muted-foreground">
+                    No files or folders match "{searchQuery}"
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold">No files yet</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Upload files or create a folder to get started
+                  </p>
+                  <div className="flex gap-2">
+                    <Button onClick={() => setCreateFolderOpen(true)}>
+                      <FolderPlus className="mr-2 h-4 w-4" />
+                      New Folder
+                    </Button>
+                    <Button variant="outline" onClick={() => setUploadDialogOpen(true)}>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

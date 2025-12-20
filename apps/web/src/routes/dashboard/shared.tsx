@@ -1,19 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Copy, File, Search, Share2 } from "lucide-react";
+import { Copy, File, Share2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
-import { ModeToggle } from "@/components/mode-toggle";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
+import { DashboardHeader } from "@/components/dashboard/header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/dashboard/shared")({
@@ -44,12 +36,19 @@ function formatDate(date: Date | string): string {
 
 function SharedView() {
   const trpc = useTRPC();
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Get all files and filter to only shared ones - use cached data from loader
   const filesQuery = useQuery(trpc.storage.listFiles.queryOptions());
 
-  const sharedFiles =
+  const allSharedFiles =
     filesQuery.data?.files.filter((file) => file.isPublic) || [];
+
+  // Filter based on search query
+  const searchLower = searchQuery.toLowerCase();
+  const sharedFiles = searchQuery
+    ? allSharedFiles.filter((file) => file.name.toLowerCase().includes(searchLower))
+    : allSharedFiles;
 
   const copyShareLink = (shareId: string | null) => {
     if (!shareId) return;
@@ -60,29 +59,12 @@ function SharedView() {
 
   return (
     <>
-      {/* Header */}
-      <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-        <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="mr-2 h-4" />
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbPage>Shared Files</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="text-muted-foreground absolute left-2.5 top-2.5 h-4 w-4" />
-            <Input
-              type="search"
-              placeholder="Search shared..."
-              className="w-64 pl-8"
-            />
-          </div>
-          <ModeToggle />
-        </div>
-      </header>
+      <DashboardHeader
+        breadcrumbs={[{ label: "Shared Files" }]}
+        searchPlaceholder="Search shared..."
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
@@ -137,10 +119,21 @@ function SharedView() {
           {sharedFiles.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Share2 className="text-muted-foreground mb-4 h-12 w-12" />
-              <h3 className="text-lg font-semibold">No shared files</h3>
-              <p className="text-muted-foreground">
-                Files you share publicly will appear here
-              </p>
+              {searchQuery ? (
+                <>
+                  <h3 className="text-lg font-semibold">No results found</h3>
+                  <p className="text-muted-foreground">
+                    No shared files match "{searchQuery}"
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold">No shared files</h3>
+                  <p className="text-muted-foreground">
+                    Files you share publicly will appear here
+                  </p>
+                </>
+              )}
             </div>
           )}
         </div>
