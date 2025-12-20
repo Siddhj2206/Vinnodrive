@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 
+import { AppSidebar } from "@/components/dashboard/app-sidebar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { getUser } from "@/functions/get-user";
 import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/dashboard")({
-  component: RouteComponent,
+  component: DashboardLayout,
   beforeLoad: async () => {
     const session = await getUser();
     return { session };
@@ -19,17 +21,33 @@ export const Route = createFileRoute("/dashboard")({
   },
 });
 
-function RouteComponent() {
+function DashboardLayout() {
   const { session } = Route.useRouteContext();
-
   const trpc = useTRPC();
-  const privateData = useQuery(trpc.privateData.queryOptions());
+
+  // Fetch quota data for storage card
+  const quotaQuery = useQuery(trpc.storage.getQuota.queryOptions());
+
+  // Fetch folders for sidebar navigation
+  const filesQuery = useQuery(trpc.storage.listFiles.queryOptions());
+
+  const user = {
+    name: session?.user.name || "User",
+    email: session?.user.email || "",
+    avatar: session?.user.image || undefined,
+  };
 
   return (
-    <div>
-      <h1>Dashboard</h1>
-      <p>Welcome {session?.user.name}</p>
-      <p>API: {privateData.data?.message}</p>
-    </div>
+    <SidebarProvider>
+      <AppSidebar
+        user={user}
+        folders={filesQuery.data?.folders || []}
+        storageUsed={quotaQuery.data?.storageUsed || 0}
+        storageLimit={quotaQuery.data?.storageLimit || 1073741824}
+      />
+      <SidebarInset>
+        <Outlet />
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
