@@ -315,10 +315,11 @@ export const storageRouter = router({
         orderBy: [desc(userAssets.createdAt)],
       });
 
-      // Get subfolders
+      // Get subfolders (exclude trashed)
       const userFolders = await db.query.folders.findMany({
         where: and(
           eq(folders.userId, userId),
+          isNull(folders.deletedAt),
           input?.folderId
             ? eq(folders.parentId, input.folderId)
             : isNull(folders.parentId)
@@ -396,6 +397,23 @@ export const storageRouter = router({
   // ============================================
   // FOLDER MANAGEMENT
   // ============================================
+
+/**
+   * List only folders (lightweight query for sidebar)
+   */
+  listFolders: protectedProcedure.query(async ({ ctx }) => {
+    const userId = getUserId(ctx);
+
+    const userFolders = await db.query.folders.findMany({
+      where: and(
+        eq(folders.userId, userId),
+        isNull(folders.deletedAt)
+      ),
+      orderBy: [desc(folders.createdAt)],
+    });
+
+    return userFolders;
+  }),
 
   /**
    * Create a new folder
@@ -505,6 +523,183 @@ export const storageRouter = router({
       await db.delete(folders).where(eq(folders.id, input.id));
 
       return { success: true };
+    }),
+
+  /**
+   * Move a folder to trash (soft delete - recursive)
+   * Moves the folder and all its contents (files and subfolders) to trash
+   */
+  moveFolderToTrash: rateLimitedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = getUserId(ctx);
+      const now = new Date();
+
+      // Check folder exists and belongs to user
+      const folder = await db.query.folders.findFirst({
+        where: and(
+          eq(folders.id, input.id),
+          eq(folders.userId, userId),
+          isNull(folders.deletedAt)
+        ),
+      });
+
+      if (!folder) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Folder not found or already in trash",
+        });
+      }
+
+      // Recursively collect all folder IDs to trash
+      async function collectFolderIds(folderId: string): Promise<string[]> {
+        const subfolders = await db.query.folders.findMany({
+          where: and(
+            eq(folders.parentId, folderId),
+            eq(folders.userId, userId),
+            isNull(folders.deletedAt)
+          ),
+        });
+
+        const ids = [folderId];
+        for (const subfolder of subfolders) {
+          const subIds = await collectFolderIds(subfolder.id);
+          ids.push(...subIds);
+        }
+        return ids;
+      }
+
+      const folderIds = await collectFolderIds(input.id);
+
+      await db.transaction(async (tx) => {
+        // Trash all files in these folders
+        if (folderIds.length > 0) {
+          await tx
+            .update(userAssets)
+            .set({ deletedAt: now })
+            .where(
+              and(
+                eq(userAssets.userId, userId),
+                isNull(userAssets.deletedAt),
+                sql`${userAssets.folderId} IN (${sql.join(folderIds.map(id => sql`${id}`), sql`, `)})`
+              )
+            );
+        }
+
+        // Trash all folders
+        for (const folderId of folderIds) {
+          await tx
+            .update(folders)
+            .set({ deletedAt: now })
+            .where(eq(folders.id, folderId));
+        }
+      });
+
+      return { 
+        success: true, 
+        message: "Folder and contents moved to trash",
+        trashedFolders: folderIds.length,
+      };
+    }),
+
+  /**
+   * Restore a folder from trash (recursive)
+   * Restores the folder and all its contents
+   */
+  restoreFolderFromTrash: rateLimitedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = getUserId(ctx);
+
+      // Check folder exists and is in trash
+      const folder = await db.query.folders.findFirst({
+        where: and(
+          eq(folders.id, input.id),
+          eq(folders.userId, userId),
+          isNotNull(folders.deletedAt)
+        ),
+      });
+
+      if (!folder) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Folder not found in trash",
+        });
+      }
+
+      // Check if parent folder exists and is not trashed (if not root)
+      if (folder.parentId) {
+        const parentFolder = await db.query.folders.findFirst({
+          where: and(
+            eq(folders.id, folder.parentId),
+            eq(folders.userId, userId)
+          ),
+        });
+
+        if (!parentFolder) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Parent folder no longer exists",
+          });
+        }
+
+        if (parentFolder.deletedAt) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Parent folder is in trash. Restore it first or restore this folder to root.",
+          });
+        }
+      }
+
+      // Recursively collect all trashed folder IDs under this folder
+      async function collectTrashedFolderIds(folderId: string): Promise<string[]> {
+        const subfolders = await db.query.folders.findMany({
+          where: and(
+            eq(folders.parentId, folderId),
+            eq(folders.userId, userId),
+            isNotNull(folders.deletedAt)
+          ),
+        });
+
+        const ids = [folderId];
+        for (const subfolder of subfolders) {
+          const subIds = await collectTrashedFolderIds(subfolder.id);
+          ids.push(...subIds);
+        }
+        return ids;
+      }
+
+      const folderIds = await collectTrashedFolderIds(input.id);
+
+      await db.transaction(async (tx) => {
+        // Restore all files in these folders
+        if (folderIds.length > 0) {
+          await tx
+            .update(userAssets)
+            .set({ deletedAt: null })
+            .where(
+              and(
+                eq(userAssets.userId, userId),
+                isNotNull(userAssets.deletedAt),
+                sql`${userAssets.folderId} IN (${sql.join(folderIds.map(id => sql`${id}`), sql`, `)})`
+              )
+            );
+        }
+
+        // Restore all folders
+        for (const folderId of folderIds) {
+          await tx
+            .update(folders)
+            .set({ deletedAt: null })
+            .where(eq(folders.id, folderId));
+        }
+      });
+
+      return { 
+        success: true, 
+        message: "Folder and contents restored from trash",
+        restoredFolders: folderIds.length,
+      };
     }),
 
   // ============================================
@@ -627,11 +822,12 @@ export const storageRouter = router({
     }),
 
   /**
-   * List files in trash
+   * List files and folders in trash
    */
   listTrash: rateLimitedProcedure.query(async ({ ctx }) => {
     const userId = getUserId(ctx);
 
+    // Get trashed files
     const trashedAssets = await db.query.userAssets.findMany({
       where: and(
         eq(userAssets.userId, userId),
@@ -641,13 +837,47 @@ export const storageRouter = router({
       orderBy: [desc(userAssets.deletedAt)],
     });
 
-    return trashedAssets.map((asset) => ({
+    // Get trashed folders (only top-level trashed folders - those whose parent is not trashed or is null)
+    const allTrashedFolders = await db.query.folders.findMany({
+      where: and(
+        eq(folders.userId, userId),
+        isNotNull(folders.deletedAt)
+      ),
+      orderBy: [desc(folders.deletedAt)],
+    });
+
+    // Filter to only show "root" trashed folders (parent not trashed or no parent)
+    const trashedFolderIds = new Set(allTrashedFolders.map(f => f.id));
+    const topLevelTrashedFolders = allTrashedFolders.filter(folder => {
+      // If no parent, it's a top-level trashed folder
+      if (!folder.parentId) return true;
+      // If parent is not in trash, show this folder
+      if (!trashedFolderIds.has(folder.parentId)) return true;
+      // Otherwise, it's nested within a trashed folder - don't show at top level
+      return false;
+    });
+
+    const files = trashedAssets.map((asset) => ({
       id: asset.id,
+      type: "file" as const,
       name: asset.name,
       size: asset.file.size,
       deletedAt: asset.deletedAt,
       uploadDate: asset.createdAt,
     }));
+
+    const trashedFolders = topLevelTrashedFolders.map((folder) => ({
+      id: folder.id,
+      type: "folder" as const,
+      name: folder.name,
+      deletedAt: folder.deletedAt,
+      createdAt: folder.createdAt,
+    }));
+
+    return {
+      files,
+      folders: trashedFolders,
+    };
   }),
 
   /**
@@ -703,7 +933,99 @@ export const storageRouter = router({
     }),
 
   /**
-   * Empty entire trash (permanently delete all trashed files)
+   * Permanently delete a folder from trash (recursive)
+   * Deletes the folder and all its contents permanently
+   */
+  permanentlyDeleteFolder: rateLimitedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = getUserId(ctx);
+
+      // Find the folder in trash
+      const folder = await db.query.folders.findFirst({
+        where: and(
+          eq(folders.id, input.id),
+          eq(folders.userId, userId),
+          isNotNull(folders.deletedAt)
+        ),
+      });
+
+      if (!folder) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Folder not found in trash",
+        });
+      }
+
+      // Recursively collect all folder IDs
+      async function collectAllFolderIds(folderId: string): Promise<string[]> {
+        const subfolders = await db.query.folders.findMany({
+          where: and(
+            eq(folders.parentId, folderId),
+            eq(folders.userId, userId)
+          ),
+        });
+
+        const ids = [folderId];
+        for (const subfolder of subfolders) {
+          const subIds = await collectAllFolderIds(subfolder.id);
+          ids.push(...subIds);
+        }
+        return ids;
+      }
+
+      const folderIds = await collectAllFolderIds(input.id);
+      let totalFreedBytes = 0;
+
+      // Get all files in these folders
+      const assetsInFolders = await db.query.userAssets.findMany({
+        where: and(
+          eq(userAssets.userId, userId),
+          sql`${userAssets.folderId} IN (${sql.join(folderIds.map(id => sql`${id}`), sql`, `)})`
+        ),
+        with: { file: true },
+      });
+
+      await db.transaction(async (tx) => {
+        // Delete all files and update reference counts
+        for (const asset of assetsInFolders) {
+          await tx.delete(userAssets).where(eq(userAssets.id, asset.id));
+
+          const [updatedFile] = await tx
+            .update(files)
+            .set({ refCount: sql`${files.refCount} - 1` })
+            .where(eq(files.hash, asset.fileHash))
+            .returning();
+
+          if (updatedFile && updatedFile.refCount <= 0) {
+            await s3.file(updatedFile.path).delete();
+            await tx.delete(files).where(eq(files.hash, asset.fileHash));
+          }
+
+          totalFreedBytes += asset.file.size;
+        }
+
+        // Delete all folders (children first, then parents)
+        for (const folderId of folderIds.reverse()) {
+          await tx.delete(folders).where(eq(folders.id, folderId));
+        }
+      });
+
+      // Update storage usage
+      await updateStorageUsage(userId, -totalFreedBytes);
+
+      return { 
+        success: true, 
+        message: "Folder and contents permanently deleted",
+        deletedFiles: assetsInFolders.length,
+        deletedFolders: folderIds.length,
+        freedBytes: totalFreedBytes,
+        freedBytesFormatted: formatBytes(totalFreedBytes),
+      };
+    }),
+
+  /**
+   * Empty entire trash (permanently delete all trashed files and folders)
    */
   emptyTrash: rateLimitedProcedure.mutation(async ({ ctx }) => {
     const userId = getUserId(ctx);
@@ -717,31 +1039,67 @@ export const storageRouter = router({
       with: { file: true },
     });
 
-    if (trashedAssets.length === 0) {
-      return { success: true, deletedCount: 0, message: "Trash is already empty" };
+    // Get all trashed folders
+    const trashedFolders = await db.query.folders.findMany({
+      where: and(
+        eq(folders.userId, userId),
+        isNotNull(folders.deletedAt)
+      ),
+    });
+
+    if (trashedAssets.length === 0 && trashedFolders.length === 0) {
+      return { 
+        success: true, 
+        deletedFiles: 0, 
+        deletedFolders: 0, 
+        message: "Trash is already empty" 
+      };
     }
 
     let totalFreedBytes = 0;
 
     await db.transaction(async (tx) => {
+      // Delete all trashed files
       for (const asset of trashedAssets) {
-        // Delete the user asset
         await tx.delete(userAssets).where(eq(userAssets.id, asset.id));
 
-        // Decrement reference count
         const [updatedFile] = await tx
           .update(files)
           .set({ refCount: sql`${files.refCount} - 1` })
           .where(eq(files.hash, asset.fileHash))
           .returning();
 
-        // If no more references, delete from S3 and database
         if (updatedFile && updatedFile.refCount <= 0) {
           await s3.file(updatedFile.path).delete();
           await tx.delete(files).where(eq(files.hash, asset.fileHash));
         }
 
         totalFreedBytes += asset.file.size;
+      }
+
+      // Delete all trashed folders (children first by sorting by depth)
+      // Sort by depth (deeper folders first) to avoid FK constraint issues
+      const folderDepths = new Map<string, number>();
+      
+      function calculateDepth(folderId: string, depth: number = 0): number {
+        const folder = trashedFolders.find(f => f.id === folderId);
+        if (!folder || !folder.parentId) return depth;
+        const parent = trashedFolders.find(f => f.id === folder.parentId);
+        if (!parent) return depth;
+        return calculateDepth(parent.id, depth + 1);
+      }
+
+      for (const folder of trashedFolders) {
+        folderDepths.set(folder.id, calculateDepth(folder.id));
+      }
+
+      // Sort by depth descending (deepest first)
+      const sortedFolders = [...trashedFolders].sort(
+        (a, b) => (folderDepths.get(b.id) ?? 0) - (folderDepths.get(a.id) ?? 0)
+      );
+
+      for (const folder of sortedFolders) {
+        await tx.delete(folders).where(eq(folders.id, folder.id));
       }
     });
 
@@ -750,10 +1108,11 @@ export const storageRouter = router({
 
     return {
       success: true,
-      deletedCount: trashedAssets.length,
+      deletedFiles: trashedAssets.length,
+      deletedFolders: trashedFolders.length,
       freedBytes: totalFreedBytes,
       freedBytesFormatted: formatBytes(totalFreedBytes),
-      message: `Permanently deleted ${trashedAssets.length} file(s)`,
+      message: `Permanently deleted ${trashedAssets.length} file(s) and ${trashedFolders.length} folder(s)`,
     };
   }),
 

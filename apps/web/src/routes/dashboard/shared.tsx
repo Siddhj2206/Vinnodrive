@@ -18,6 +18,12 @@ import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/dashboard/shared")({
   component: SharedView,
+  loader: async ({ context }) => {
+    // Prefetch files data before rendering - uses cache if available
+    await context.queryClient.ensureQueryData(
+      context.trpc.storage.listFiles.queryOptions()
+    );
+  },
 });
 
 function formatBytes(bytes: number): string {
@@ -39,7 +45,7 @@ function formatDate(date: Date | string): string {
 function SharedView() {
   const trpc = useTRPC();
 
-  // Get all files and filter to only shared ones
+  // Get all files and filter to only shared ones - use cached data from loader
   const filesQuery = useQuery(trpc.storage.listFiles.queryOptions());
 
   const sharedFiles =

@@ -17,6 +17,7 @@ import { toast } from "sonner";
 
 import { FileUpload } from "@/components/dashboard/file-upload";
 import { ModeToggle } from "@/components/mode-toggle";
+import { StorageInvalidations } from "@/utils/invalidate";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,6 +61,12 @@ import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/dashboard/folder/$folderId")({
   component: FolderView,
+  loader: async ({ context, params }) => {
+    // Prefetch folder contents before rendering - uses cache if available
+    await context.queryClient.ensureQueryData(
+      context.trpc.storage.listFiles.queryOptions({ folderId: params.folderId })
+    );
+  },
 });
 
 function formatBytes(bytes: number): string {
@@ -107,7 +114,7 @@ function FolderView() {
   } | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
-  // Queries
+  // Queries - use cached data from loader
   const filesQuery = useQuery(
     trpc.storage.listFiles.queryOptions({ folderId })
   );
@@ -116,7 +123,7 @@ function FolderView() {
   const createFolderMutation = useMutation(
     trpc.storage.createFolder.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["storage", "listFiles"] });
+        StorageInvalidations.afterFolderChange(queryClient);
         setCreateFolderOpen(false);
         setNewFolderName("");
         toast.success("Folder created successfully");
@@ -130,7 +137,7 @@ function FolderView() {
   const renameFolderMutation = useMutation(
     trpc.storage.renameFolder.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["storage", "listFiles"] });
+        StorageInvalidations.afterFolderChange(queryClient);
         setRenameDialogOpen(false);
         setRenameItem(null);
         toast.success("Folder renamed successfully");
@@ -144,7 +151,7 @@ function FolderView() {
   const renameFileMutation = useMutation(
     trpc.storage.renameFile.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["storage", "listFiles"] });
+        StorageInvalidations.afterFileRename(queryClient);
         setRenameDialogOpen(false);
         setRenameItem(null);
         toast.success("File renamed successfully");
@@ -156,12 +163,12 @@ function FolderView() {
   );
 
   const deleteFolderMutation = useMutation(
-    trpc.storage.deleteFolder.mutationOptions({
+    trpc.storage.moveFolderToTrash.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["storage", "listFiles"] });
+        StorageInvalidations.afterMoveToTrash(queryClient);
         setDeleteDialogOpen(false);
         setDeleteItem(null);
-        toast.success("Folder deleted successfully");
+        toast.success("Folder moved to trash");
       },
       onError: (error) => {
         toast.error(error.message);
@@ -172,7 +179,7 @@ function FolderView() {
   const moveToTrashMutation = useMutation(
     trpc.storage.moveToTrash.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["storage", "listFiles"] });
+        StorageInvalidations.afterMoveToTrash(queryClient);
         setDeleteDialogOpen(false);
         setDeleteItem(null);
         toast.success("File moved to trash");
@@ -186,7 +193,7 @@ function FolderView() {
   const togglePublicMutation = useMutation(
     trpc.storage.togglePublic.mutationOptions({
       onSuccess: (data) => {
-        queryClient.invalidateQueries({ queryKey: ["storage", "listFiles"] });
+        StorageInvalidations.afterToggleShare(queryClient);
         if (data.isPublic) {
           toast.success("File is now public");
         } else {
@@ -356,7 +363,7 @@ function FolderView() {
                       }}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
+                      Move to Trash
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -554,13 +561,12 @@ function FolderView() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {deleteItem?.type === "folder" ? "Delete Folder" : "Move to Trash"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>Move to Trash</AlertDialogTitle>
             <AlertDialogDescription>
+              Are you sure you want to move "{deleteItem?.name}" to trash?{" "}
               {deleteItem?.type === "folder"
-                ? `Are you sure you want to delete "${deleteItem?.name}"? The folder must be empty.`
-                : `Are you sure you want to move "${deleteItem?.name}" to trash? You can restore it later.`}
+                ? "The folder and all its contents will be moved to trash."
+                : "You can restore it later."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -569,7 +575,7 @@ function FolderView() {
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleteItem?.type === "folder" ? "Delete" : "Move to Trash"}
+              Move to Trash
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

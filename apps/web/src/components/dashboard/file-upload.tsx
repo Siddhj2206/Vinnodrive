@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { StorageInvalidations } from "@/utils/invalidate";
 import { useTRPC } from "@/utils/trpc";
 
 interface UploadFile {
@@ -118,8 +119,8 @@ export function FileUpload({ folderId, onComplete }: FileUploadProps) {
           toast.success(`"${file.name}" uploaded successfully`);
         }
 
-        // Refresh file list
-        queryClient.invalidateQueries({ queryKey: ["storage"] });
+        // Invalidate relevant queries after successful upload
+        StorageInvalidations.afterUpload(queryClient);
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Upload failed";

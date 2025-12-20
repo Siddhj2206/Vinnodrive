@@ -4,6 +4,7 @@ import {
   Files,
   Folder,
   HardDrive,
+  Home,
   Share2,
   Trash2,
   Upload,
@@ -99,49 +100,58 @@ export function AppSidebar({
           <SidebarGroupLabel>Files</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {/* All Files */}
-              <Collapsible asChild defaultOpen>
+              {/* Home - root files */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Home"
+                  isActive={pathname === "/dashboard"}
+                >
+                  <Link to="/dashboard">
+                    <Home />
+                    <span>Home</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* All Files - collapsible folder list */}
+              <Collapsible asChild defaultOpen className="group/collapsible">
                 <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    tooltip="All Files"
-                    isActive={pathname === "/dashboard"}
-                  >
-                    <Link to="/dashboard">
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      tooltip="Folders"
+                      isActive={pathname.startsWith("/dashboard/folder")}
+                    >
                       <Files />
-                      <span>All Files</span>
-                    </Link>
-                  </SidebarMenuButton>
+                      <span>Folders</span>
+                      {folders.length > 0 && (
+                        <ChevronRight className="ml-auto size-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                      )}
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
                   {folders.length > 0 && (
-                    <>
-                      <CollapsibleTrigger asChild>
-                        <SidebarMenuButton className="ml-auto">
-                          <ChevronRight className="transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                        </SidebarMenuButton>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <SidebarMenuSub>
-                          {folders.map((folder) => (
-                            <SidebarMenuSubItem key={folder.id}>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={
-                                  pathname === `/dashboard/folder/${folder.id}`
-                                }
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {folders.map((folder) => (
+                          <SidebarMenuSubItem key={folder.id}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={
+                                pathname === `/dashboard/folder/${folder.id}`
+                              }
+                            >
+                              <Link
+                                to="/dashboard/folder/$folderId"
+                                params={{ folderId: folder.id }}
                               >
-                                <Link
-                                  to="/dashboard/folder/$folderId"
-                                  params={{ folderId: folder.id }}
-                                >
-                                  <Folder className="size-4" />
-                                  <span>{folder.name}</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                          ))}
-                        </SidebarMenuSub>
-                      </CollapsibleContent>
-                    </>
+                                <Folder className="size-4" />
+                                <span>{folder.name}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
                   )}
                 </SidebarMenuItem>
               </Collapsible>

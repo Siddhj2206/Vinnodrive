@@ -42,10 +42,12 @@ export const folders = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date())
       .notNull(),
+    deletedAt: timestamp("deleted_at"), // Soft delete for trash feature
   },
   (table) => [
     index("folders_user_id_idx").on(table.userId),
     index("folders_parent_id_idx").on(table.parentId),
+    index("folders_deleted_at_idx").on(table.deletedAt),
   ]
 );
 

@@ -1,9 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { File, RotateCcw, Search, Trash2 } from "lucide-react";
+import { File, Folder, RotateCcw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ModeToggle } from "@/components/mode-toggle";
+import { StorageInvalidations } from "@/utils/invalidate";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +30,12 @@ import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/dashboard/trash")({
   component: TrashView,
+  loader: async ({ context }) => {
+    // Prefetch trash data before rendering - uses cache if available
+    await context.queryClient.ensureQueryData(
+      context.trpc.storage.listTrash.queryOptions()
+    );
+  },
 });
 
 function formatBytes(bytes: number): string {
@@ -52,14 +59,14 @@ function TrashView() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
-  // Query trashed files
+  // Query trashed items - use cached data from loader
   const trashQuery = useQuery(trpc.storage.listTrash.queryOptions());
 
-  // Mutations
-  const restoreMutation = useMutation(
+  // Mutations for files
+  const restoreFileMutation = useMutation(
     trpc.storage.restoreFromTrash.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["storage"] });
+        StorageInvalidations.afterRestore(queryClient);
         toast.success("File restored successfully");
       },
       onError: (error) => {
@@ -68,11 +75,36 @@ function TrashView() {
     })
   );
 
-  const permanentDeleteMutation = useMutation(
+  const permanentDeleteFileMutation = useMutation(
     trpc.storage.permanentlyDelete.mutationOptions({
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["storage"] });
+        StorageInvalidations.afterPermanentDelete(queryClient);
         toast.success("File permanently deleted");
+      },
+      onError: (error) => {
+        toast.error(error.message);
+      },
+    })
+  );
+
+  // Mutations for folders
+  const restoreFolderMutation = useMutation(
+    trpc.storage.restoreFolderFromTrash.mutationOptions({
+      onSuccess: () => {
+        StorageInvalidations.afterRestore(queryClient);
+        toast.success("Folder restored successfully");
+      },
+      onError: (error) => {
+        toast.error(error.message);
+      },
+    })
+  );
+
+  const permanentDeleteFolderMutation = useMutation(
+    trpc.storage.permanentlyDeleteFolder.mutationOptions({
+      onSuccess: () => {
+        StorageInvalidations.afterPermanentDelete(queryClient);
+        toast.success("Folder permanently deleted");
       },
       onError: (error) => {
         toast.error(error.message);
@@ -83,7 +115,7 @@ function TrashView() {
   const emptyTrashMutation = useMutation(
     trpc.storage.emptyTrash.mutationOptions({
       onSuccess: (data) => {
-        queryClient.invalidateQueries({ queryKey: ["storage"] });
+        StorageInvalidations.afterEmptyTrash(queryClient);
         toast.success(data.message);
       },
       onError: (error) => {
@@ -92,7 +124,9 @@ function TrashView() {
     })
   );
 
-  const trashedFiles = trashQuery.data || [];
+  const trashedFiles = trashQuery.data?.files || [];
+  const trashedFolders = trashQuery.data?.folders || [];
+  const totalItems = trashedFiles.length + trashedFolders.length;
 
   return (
     <>
@@ -125,9 +159,14 @@ function TrashView() {
         {/* Toolbar */}
         <div className="mb-4 flex items-center justify-between">
           <p className="text-muted-foreground text-sm">
-            {trashedFiles.length} item(s) in trash
+            {totalItems} item(s) in trash
+            {trashedFolders.length > 0 && trashedFiles.length > 0 && (
+              <span className="ml-1">
+                ({trashedFolders.length} folder(s), {trashedFiles.length} file(s))
+              </span>
+            )}
           </p>
-          {trashedFiles.length > 0 && (
+          {totalItems > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive">
@@ -139,7 +178,7 @@ function TrashView() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Empty Trash</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will permanently delete all {trashedFiles.length} item(s)
+                    This will permanently delete all {totalItems} item(s)
                     in trash. This action cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
@@ -157,7 +196,7 @@ function TrashView() {
           )}
         </div>
 
-        {/* Trashed Files List */}
+        {/* Trashed Items List */}
         <div className="rounded-lg border">
           <div className="grid grid-cols-[1fr_100px_120px_100px] gap-4 border-b bg-muted/50 px-4 py-3 text-sm font-medium">
             <div>Name</div>
@@ -166,6 +205,62 @@ function TrashView() {
             <div>Actions</div>
           </div>
 
+          {/* Trashed Folders */}
+          {trashedFolders.map((folder) => (
+            <div
+              key={folder.id}
+              className="grid grid-cols-[1fr_100px_120px_100px] gap-4 border-b px-4 py-3 hover:bg-muted/50"
+            >
+              <div className="flex items-center gap-3">
+                <Folder className="h-5 w-5 text-blue-500 opacity-50" />
+                <span className="text-muted-foreground">{folder.name}</span>
+              </div>
+              <div className="text-muted-foreground text-sm">--</div>
+              <div className="text-muted-foreground text-sm">
+                {formatDate(folder.deletedAt)}
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => restoreFolderMutation.mutate({ id: folder.id })}
+                  disabled={restoreFolderMutation.isPending}
+                  title="Restore folder"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="sm" title="Delete permanently">
+                      <Trash2 className="text-destructive h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Folder Permanently</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to permanently delete "{folder.name}" and all its contents?
+                        This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() =>
+                          permanentDeleteFolderMutation.mutate({ id: folder.id })
+                        }
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Delete Permanently
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
+          ))}
+
+          {/* Trashed Files */}
           {trashedFiles.map((file) => (
             <div
               key={file.id}
@@ -185,14 +280,15 @@ function TrashView() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => restoreMutation.mutate({ id: file.id })}
-                  disabled={restoreMutation.isPending}
+                  onClick={() => restoreFileMutation.mutate({ id: file.id })}
+                  disabled={restoreFileMutation.isPending}
+                  title="Restore file"
                 >
                   <RotateCcw className="h-4 w-4" />
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" title="Delete permanently">
                       <Trash2 className="text-destructive h-4 w-4" />
                     </Button>
                   </AlertDialogTrigger>
@@ -208,7 +304,7 @@ function TrashView() {
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
                         onClick={() =>
-                          permanentDeleteMutation.mutate({ id: file.id })
+                          permanentDeleteFileMutation.mutate({ id: file.id })
                         }
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       >
@@ -222,12 +318,12 @@ function TrashView() {
           ))}
 
           {/* Empty State */}
-          {trashedFiles.length === 0 && (
+          {totalItems === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Trash2 className="text-muted-foreground mb-4 h-12 w-12" />
               <h3 className="text-lg font-semibold">Trash is empty</h3>
               <p className="text-muted-foreground">
-                Files you delete will appear here
+                Files and folders you delete will appear here
               </p>
             </div>
           )}
