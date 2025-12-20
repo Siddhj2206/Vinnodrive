@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { Check, KeyRound, Loader2, LogOut, Mail, Shield, User } from "lucide-react";
+import { KeyRound, Loader2, LogOut, Shield, User } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -16,7 +16,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -62,7 +61,6 @@ function AccountPage() {
   const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
 
   // Loading states
-  const [sendingVerification, setSendingVerification] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
 
   // Password form
@@ -85,28 +83,6 @@ function AccountPage() {
       router.navigate({ to: "/login" });
     } catch {
       toast.error("Failed to sign out");
-    }
-  };
-
-  const handleSendVerificationEmail = async () => {
-    if (!user?.email) return;
-
-    setSendingVerification(true);
-    try {
-      const { error } = await authClient.sendVerificationEmail({
-        email: user.email,
-        callbackURL: "/dashboard/account",
-      });
-
-      if (error) {
-        toast.error(error.message || "Failed to send verification email");
-      } else {
-        toast.success("Verification email sent! Check your inbox.");
-      }
-    } catch {
-      toast.error("Failed to send verification email");
-    } finally {
-      setSendingVerification(false);
     }
   };
 
@@ -185,19 +161,7 @@ function AccountPage() {
                 </Avatar>
                 <div className="space-y-1">
                   <h3 className="text-xl font-semibold">{user?.name}</h3>
-                  <div className="flex items-center gap-2">
-                    <p className="text-muted-foreground text-sm">{user?.email}</p>
-                    {user?.emailVerified ? (
-                      <Badge variant="secondary" className="gap-1">
-                        <Check className="h-3 w-3" />
-                        Verified
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-yellow-600">
-                        Unverified
-                      </Badge>
-                    )}
-                  </div>
+                  <p className="text-muted-foreground text-sm">{user?.email}</p>
                 </div>
               </div>
             </CardContent>
@@ -251,47 +215,7 @@ function AccountPage() {
               </div>
               <CardDescription>Manage your account security</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Email Verification */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Mail className="text-muted-foreground h-5 w-5" />
-                  <div>
-                    <p className="font-medium">Email Verification</p>
-                    <p className="text-muted-foreground text-sm">
-                      {user?.emailVerified
-                        ? "Your email address is verified"
-                        : "Verify your email to secure your account"}
-                    </p>
-                  </div>
-                </div>
-                {user?.emailVerified ? (
-                  <Badge variant="secondary" className="gap-1">
-                    <Check className="h-3 w-3" />
-                    Verified
-                  </Badge>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSendVerificationEmail}
-                    disabled={sendingVerification}
-                  >
-                    {sendingVerification ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Sending...
-                      </>
-                    ) : (
-                      "Send Verification Email"
-                    )}
-                  </Button>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Password */}
+            <CardContent>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <KeyRound className="text-muted-foreground h-5 w-5" />

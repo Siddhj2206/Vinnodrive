@@ -257,7 +257,7 @@ function DashboardIndex() {
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
         {/* Stats Cards */}
-        <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-6 grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Storage Used</CardTitle>
@@ -293,15 +293,6 @@ function DashboardIndex() {
               <p className="text-muted-foreground text-xs">
                 {stats?.savedPercent?.toFixed(1) || 0}% through deduplication
               </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Rate Limit</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.rateLimit || 2}/sec</div>
-              <p className="text-muted-foreground text-xs">API calls allowed</p>
             </CardContent>
           </Card>
         </div>
