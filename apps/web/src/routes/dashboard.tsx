@@ -15,10 +15,11 @@ export const Route = createFileRoute("/dashboard")({
       throw redirect({ to: "/login" });
     }
     
-    // Prefetch sidebar data (quota and folders) - uses cache if available
+    // Prefetch sidebar data (quota, folders, avatar) - uses cache if available
     await Promise.all([
       context.queryClient.ensureQueryData(context.trpc.storage.getQuota.queryOptions()),
       context.queryClient.ensureQueryData(context.trpc.storage.listFolders.queryOptions()),
+      context.queryClient.ensureQueryData(context.trpc.storage.getAvatarUrl.queryOptions()),
     ]);
     
     return { session };
@@ -35,10 +36,13 @@ function DashboardLayout() {
   // Fetch folders for sidebar navigation - use cached data from beforeLoad
   const foldersQuery = useQuery(trpc.storage.listFolders.queryOptions());
 
+  // Fetch avatar URL (presigned) - use cached data from beforeLoad
+  const avatarQuery = useQuery(trpc.storage.getAvatarUrl.queryOptions());
+
   const user = {
     name: session?.user.name || "User",
     email: session?.user.email || "",
-    avatar: session?.user.image || undefined,
+    avatar: avatarQuery.data?.avatarUrl || undefined,
   };
 
   return (

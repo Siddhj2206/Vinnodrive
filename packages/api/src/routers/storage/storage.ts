@@ -171,6 +171,7 @@ export const storageRouter = router({
         filename: z.string().min(1).max(255),
         size: z.number().positive(),
         hash: z.string().length(64), // SHA-256 hex
+        contentType: z.string().optional(),
         folderId: z.string().uuid().optional(),
       })
     )
@@ -191,6 +192,7 @@ export const storageRouter = router({
           // Create user asset linking to existing file
           await tx.insert(userAssets).values({
             name: input.filename,
+            contentType: input.contentType ?? null,
             userId,
             folderId: input.folderId ?? null,
             fileHash: existingFile.hash,
@@ -238,6 +240,7 @@ export const storageRouter = router({
         filename: z.string().min(1).max(255),
         size: z.number().positive(),
         hash: z.string().length(64),
+        contentType: z.string().optional(),
         folderId: z.string().uuid().optional(),
       })
     )
@@ -271,6 +274,7 @@ export const storageRouter = router({
         // Create user asset
         await tx.insert(userAssets).values({
           name: input.filename,
+          contentType: input.contentType ?? null,
           userId,
           folderId: input.folderId ?? null,
           fileHash: input.hash,
@@ -332,6 +336,7 @@ export const storageRouter = router({
         id: asset.id,
         name: asset.name,
         size: asset.file.size,
+        contentType: asset.contentType,
         uploadDate: asset.createdAt,
         uploader: userId, // In a full implementation, fetch user name
         isOriginal: asset.file.refCount === 1,
@@ -382,6 +387,7 @@ export const storageRouter = router({
         id: asset.id,
         name: asset.name,
         size: asset.file.size,
+        contentType: asset.contentType,
         uploadDate: asset.createdAt,
         folder: asset.folder,
         isOriginal: asset.file.refCount === 1,
@@ -1190,6 +1196,198 @@ export const storageRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Move multiple files to a different folder
+   */
+  moveFiles: rateLimitedProcedure
+    .input(
+      z.object({
+        ids: z.array(z.string().uuid()),
+        folderId: z.string().uuid().nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = getUserId(ctx);
+
+      // Verify target folder if specified
+      if (input.folderId) {
+        const targetFolder = await db.query.folders.findFirst({
+          where: and(
+            eq(folders.id, input.folderId),
+            eq(folders.userId, userId),
+            isNull(folders.deletedAt)
+          ),
+        });
+        if (!targetFolder) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Target folder not found",
+          });
+        }
+      }
+
+      // Move all files
+      let movedCount = 0;
+      for (const id of input.ids) {
+        const [updated] = await db
+          .update(userAssets)
+          .set({ folderId: input.folderId })
+          .where(and(eq(userAssets.id, id), eq(userAssets.userId, userId)))
+          .returning();
+        if (updated) movedCount++;
+      }
+
+      return { success: true, movedCount };
+    }),
+
+  /**
+   * Move a folder to a different parent folder
+   */
+  moveFolder: rateLimitedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        parentId: z.string().uuid().nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = getUserId(ctx);
+
+      // Get the folder being moved
+      const folder = await db.query.folders.findFirst({
+        where: and(
+          eq(folders.id, input.id),
+          eq(folders.userId, userId),
+          isNull(folders.deletedAt)
+        ),
+      });
+
+      if (!folder) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Folder not found",
+        });
+      }
+
+      // Cannot move folder to itself
+      if (input.parentId === input.id) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Cannot move folder to itself",
+        });
+      }
+
+      // Verify target folder if specified
+      if (input.parentId) {
+        const targetFolder = await db.query.folders.findFirst({
+          where: and(
+            eq(folders.id, input.parentId),
+            eq(folders.userId, userId),
+            isNull(folders.deletedAt)
+          ),
+        });
+        if (!targetFolder) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Target folder not found",
+          });
+        }
+
+        // Check for circular reference - target cannot be a child of the folder being moved
+        async function isDescendant(ancestorId: string, checkId: string): Promise<boolean> {
+          const checkFolder = await db.query.folders.findFirst({
+            where: eq(folders.id, checkId),
+          });
+          if (!checkFolder || !checkFolder.parentId) return false;
+          if (checkFolder.parentId === ancestorId) return true;
+          return isDescendant(ancestorId, checkFolder.parentId);
+        }
+
+        if (await isDescendant(input.id, input.parentId)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Cannot move folder into its own subfolder",
+          });
+        }
+      }
+
+      const [updated] = await db
+        .update(folders)
+        .set({ parentId: input.parentId })
+        .where(eq(folders.id, input.id))
+        .returning();
+
+      return { success: true, folder: updated };
+    }),
+
+  /**
+   * Move multiple folders to a different parent folder
+   */
+  moveFolders: rateLimitedProcedure
+    .input(
+      z.object({
+        ids: z.array(z.string().uuid()),
+        parentId: z.string().uuid().nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = getUserId(ctx);
+
+      // Verify target folder if specified
+      if (input.parentId) {
+        const targetFolder = await db.query.folders.findFirst({
+          where: and(
+            eq(folders.id, input.parentId),
+            eq(folders.userId, userId),
+            isNull(folders.deletedAt)
+          ),
+        });
+        if (!targetFolder) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Target folder not found",
+          });
+        }
+      }
+
+      // Helper to check circular reference
+      async function isDescendant(ancestorId: string, checkId: string): Promise<boolean> {
+        const checkFolder = await db.query.folders.findFirst({
+          where: eq(folders.id, checkId),
+        });
+        if (!checkFolder || !checkFolder.parentId) return false;
+        if (checkFolder.parentId === ancestorId) return true;
+        return isDescendant(ancestorId, checkFolder.parentId);
+      }
+
+      let movedCount = 0;
+      for (const id of input.ids) {
+        // Skip if trying to move to itself
+        if (input.parentId === id) continue;
+
+        // Skip if target is a descendant of this folder
+        if (input.parentId && await isDescendant(id, input.parentId)) continue;
+
+        const folder = await db.query.folders.findFirst({
+          where: and(
+            eq(folders.id, id),
+            eq(folders.userId, userId),
+            isNull(folders.deletedAt)
+          ),
+        });
+
+        if (folder) {
+          await db
+            .update(folders)
+            .set({ parentId: input.parentId })
+            .where(eq(folders.id, id));
+          movedCount++;
+        }
+      }
+
+      return { success: true, movedCount };
+    }),
+
   // ============================================
   // SHARING
   // ============================================
@@ -1272,6 +1470,7 @@ export const storageRouter = router({
         id: asset.id,
         name: asset.name,
         size: asset.file.size,
+        contentType: asset.contentType,
         downloadCount: asset.downloadCount + 1, // Include current download
         uploadDate: asset.createdAt,
         downloadUrl,
@@ -1398,4 +1597,63 @@ export const storageRouter = router({
       rateLimit: quota.rateLimit,
     };
   }),
+
+  // ============================================
+  // AVATAR UPLOAD
+  // ============================================
+
+  /**
+   * Get presigned URL for avatar upload
+   * Avatars are stored in avatars/ prefix with user ID as key
+   */
+  getAvatarUploadUrl: rateLimitedProcedure
+    .input(
+      z.object({
+        contentType: z.string().regex(/^image\/(jpeg|png|gif|webp)$/),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = getUserId(ctx);
+      const key = `avatars/${userId}`;
+
+      const url = s3.presign(key, {
+        method: "PUT",
+        expiresIn: 3600,
+        type: input.contentType,
+      });
+
+      return {
+        url,
+        key,
+        avatarUrl: `${process.env.R2_PUBLIC_URL || ""}/${key}`,
+      };
+    }),
+
+  /**
+   * Get presigned URL for viewing an avatar
+   * Returns a presigned download URL for the user's avatar
+   */
+  getAvatarUrl: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const targetUserId = input?.userId || getUserId(ctx);
+      const key = `avatars/${targetUserId}`;
+
+      // Check if avatar exists
+      const exists = await s3.file(key).exists();
+      if (!exists) {
+        return { avatarUrl: null };
+      }
+
+      // Generate presigned URL for viewing (1 hour expiry)
+      const avatarUrl = s3.presign(key, {
+        expiresIn: 3600,
+      });
+
+      return { avatarUrl };
+    }),
 });

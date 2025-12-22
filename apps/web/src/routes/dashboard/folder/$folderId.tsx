@@ -2,9 +2,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Copy,
-  File,
+  Eye,
   Folder,
   FolderPlus,
+  FolderInput,
   MoreHorizontal,
   Pencil,
   Share2,
@@ -15,7 +16,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { FileUpload } from "@/components/dashboard/file-upload";
+import { FileThumbnail } from "@/components/dashboard/file-thumbnail";
 import { DashboardHeader } from "@/components/dashboard/header";
+import { MoveDialog } from "@/components/dashboard/move-dialog";
+import { FilePreviewModal } from "@/components/dashboard/file-preview-modal";
 import { StorageInvalidations } from "@/utils/invalidate";
 import {
   AlertDialog,
@@ -103,6 +107,15 @@ function FolderView() {
   } | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [moveItems, setMoveItems] = useState<{ id: string; name: string; type: "file" | "folder" }[]>([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{
+    id: string;
+    name: string;
+    size: number;
+    contentType: string | null;
+  } | null>(null);
 
   // Queries - use cached data from loader
   const filesQuery = useQuery(
@@ -329,6 +342,15 @@ function FolderView() {
                       <Pencil className="mr-2 h-4 w-4" />
                       Rename
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setMoveItems([{ id: folder.id, name: folder.name, type: "folder" }]);
+                        setMoveDialogOpen(true);
+                      }}
+                    >
+                      <FolderInput className="mr-2 h-4 w-4" />
+                      Move to...
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-destructive"
@@ -357,14 +379,32 @@ function FolderView() {
               className="grid grid-cols-[1fr_100px_120px_40px] gap-4 border-b px-4 py-3 hover:bg-muted/50"
             >
               <div className="flex items-center gap-3">
-                <File className="text-muted-foreground h-5 w-5" />
-                <span>{file.name}</span>
+                <FileThumbnail
+                  fileId={file.id}
+                  fileName={file.name}
+                  contentType={file.contentType}
+                  className="h-8 w-8 flex-shrink-0"
+                />
+                <button
+                  className="hover:underline text-left truncate"
+                  onClick={() => {
+                    setPreviewFile({
+                      id: file.id,
+                      name: file.name,
+                      size: file.size,
+                      contentType: file.contentType,
+                    });
+                    setPreviewOpen(true);
+                  }}
+                >
+                  {file.name}
+                </button>
                 {file.isPublic && (
-                  <Share2 className="h-4 w-4 text-green-500" />
+                  <Share2 className="h-4 w-4 text-green-500 flex-shrink-0" />
                 )}
                 {file.isDeduplicated && (
                   <span title="Deduplicated">
-                    <Copy className="h-4 w-4 text-orange-500" />
+                    <Copy className="h-4 w-4 text-orange-500 flex-shrink-0" />
                   </span>
                 )}
               </div>
@@ -384,6 +424,20 @@ function FolderView() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
                       onClick={() => {
+                        setPreviewFile({
+                          id: file.id,
+                          name: file.name,
+                          size: file.size,
+                          contentType: file.contentType,
+                        });
+                        setPreviewOpen(true);
+                      }}
+                    >
+                      <Eye className="mr-2 h-4 w-4" />
+                      Preview
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
                         setRenameItem({
                           id: file.id,
                           name: file.name,
@@ -394,6 +448,15 @@ function FolderView() {
                     >
                       <Pencil className="mr-2 h-4 w-4" />
                       Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setMoveItems([{ id: file.id, name: file.name, type: "file" }]);
+                        setMoveDialogOpen(true);
+                      }}
+                    >
+                      <FolderInput className="mr-2 h-4 w-4" />
+                      Move to...
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
@@ -627,6 +690,21 @@ function FolderView() {
           <FileUpload folderId={folderId} onComplete={() => setUploadDialogOpen(false)} />
         </DialogContent>
       </Dialog>
+
+      {/* Move Dialog */}
+      <MoveDialog
+        open={moveDialogOpen}
+        onOpenChange={setMoveDialogOpen}
+        items={moveItems}
+        currentFolderId={folderId}
+      />
+
+      {/* Preview Modal */}
+      <FilePreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        file={previewFile}
+      />
     </>
   );
 }

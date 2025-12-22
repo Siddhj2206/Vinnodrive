@@ -67,6 +67,7 @@ export function FileUpload({ folderId, onComplete }: FileUploadProps) {
           size: file.size,
           hash,
           folderId,
+          contentType: file.type || "application/octet-stream",
         });
 
         if (result.deduplicated) {
@@ -109,6 +110,7 @@ export function FileUpload({ folderId, onComplete }: FileUploadProps) {
             size: file.size,
             hash,
             folderId,
+            contentType: file.type || "application/octet-stream",
           });
 
           setFiles((prev) =>

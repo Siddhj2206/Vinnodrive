@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Download, File, AlertCircle, ArrowLeft, Eye } from "lucide-react";
+import { useState } from "react";
 
+import { PublicFilePreview } from "@/components/dashboard/file-preview-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,6 +32,7 @@ function formatDate(date: Date | string): string {
 function SharePage() {
   const { shareId } = Route.useParams();
   const trpc = useTRPC();
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const fileQuery = useQuery(
     trpc.storage.getPublicFile.queryOptions({ shareId })
@@ -124,10 +127,21 @@ function SharePage() {
           </div>
 
           {/* Download Button */}
-          <Button onClick={handleDownload} className="w-full" size="lg">
-            <Download className="mr-2 h-5 w-5" />
-            Download File
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={() => setPreviewOpen(true)} 
+              variant="outline" 
+              className="flex-1" 
+              size="lg"
+            >
+              <Eye className="mr-2 h-5 w-5" />
+              Preview
+            </Button>
+            <Button onClick={handleDownload} className="flex-1" size="lg">
+              <Download className="mr-2 h-5 w-5" />
+              Download
+            </Button>
+          </div>
 
           {/* Footer */}
           <p className="text-center text-xs text-muted-foreground">
@@ -135,6 +149,18 @@ function SharePage() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Preview Modal */}
+      <PublicFilePreview
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        file={file ? {
+          name: file.name,
+          size: file.size,
+          contentType: file.contentType,
+          downloadUrl: file.downloadUrl,
+        } : null}
+      />
     </div>
   );
 }

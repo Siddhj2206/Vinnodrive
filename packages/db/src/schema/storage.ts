@@ -59,6 +59,7 @@ export const userAssets = pgTable(
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
     name: text("name").notNull(), // User-visible filename
+    contentType: text("content_type"), // MIME type (e.g., "image/jpeg", "application/pdf")
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),

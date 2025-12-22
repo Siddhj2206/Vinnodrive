@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { KeyRound, Loader2, LogOut, Shield, User } from "lucide-react";
-import { useState } from "react";
+import { Camera, KeyRound, Loader2, LogOut, Pencil, Shield, User, X } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { DashboardHeader } from "@/components/dashboard/header";
@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/lib/auth-client";
+import { StorageInvalidations } from "@/utils/invalidate";
 import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/dashboard/account")({
@@ -55,22 +56,40 @@ function AccountPage() {
   const { session } = Route.useRouteContext();
   const router = useRouter();
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
 
   // Dialog states
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false);
   const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
+  const [editProfileDialogOpen, setEditProfileDialogOpen] = useState(false);
 
   // Loading states
   const [changingPassword, setChangingPassword] = useState(false);
+  const [updatingProfile, setUpdatingProfile] = useState(false);
 
   // Password form
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  // Profile form
+  const [editName, setEditName] = useState("");
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
   const quotaQuery = useQuery(trpc.storage.getQuota.queryOptions());
+  
+  // Fetch avatar URL (presigned)
+  const avatarQuery = useQuery(trpc.storage.getAvatarUrl.queryOptions());
+  
+  // Avatar upload mutation
+  const getAvatarUploadUrl = useMutation(
+    trpc.storage.getAvatarUploadUrl.mutationOptions()
+  );
 
   const user = session?.user;
+  const avatarUrl = avatarQuery.data?.avatarUrl || undefined;
   const quota = quotaQuery.data;
   const usagePercent = quota
     ? (quota.storageUsed / quota.storageLimit) * 100
@@ -127,6 +146,105 @@ function AccountPage() {
     }
   };
 
+  const openEditProfileDialog = () => {
+    setEditName(user?.name || "");
+    setAvatarPreview(null);
+    setAvatarFile(null);
+    setEditProfileDialogOpen(true);
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.match(/^image\/(jpeg|png|gif|webp)$/)) {
+      toast.error("Please select a valid image file (JPEG, PNG, GIF, or WebP)");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be less than 5MB");
+      return;
+    }
+
+    setAvatarFile(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setAvatarPreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearAvatarSelection = () => {
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    if (avatarInputRef.current) {
+      avatarInputRef.current.value = "";
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!editName.trim()) {
+      toast.error("Name cannot be empty");
+      return;
+    }
+
+    setUpdatingProfile(true);
+    try {
+      let imageUrl: string | undefined;
+
+      // Upload avatar if selected
+      if (avatarFile) {
+        const { url, avatarUrl } = await getAvatarUploadUrl.mutateAsync({
+          contentType: avatarFile.type as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+        });
+
+        // Upload to S3
+        const uploadResponse = await fetch(url, {
+          method: "PUT",
+          body: avatarFile,
+          headers: {
+            "Content-Type": avatarFile.type,
+          },
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error("Failed to upload avatar");
+        }
+
+        imageUrl = avatarUrl;
+      }
+
+      // Update user profile
+      const { error } = await authClient.updateUser({
+        name: editName.trim(),
+        ...(imageUrl && { image: imageUrl }),
+      });
+
+      if (error) {
+        toast.error(error.message || "Failed to update profile");
+      } else {
+        toast.success("Profile updated successfully");
+        setEditProfileDialogOpen(false);
+        
+        // Refresh session to get updated user data
+        await authClient.getSession();
+        
+        // Invalidate avatar URL query to fetch fresh presigned URL
+        StorageInvalidations.afterAvatarUpdate(queryClient);
+      }
+    } catch (err) {
+      console.error("Profile update error:", err);
+      toast.error("Failed to update profile");
+    } finally {
+      setUpdatingProfile(false);
+    }
+  };
+
   const getInitials = (name: string) => {
     return name
       .split(" ")
@@ -145,16 +263,26 @@ function AccountPage() {
           {/* Profile Section */}
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                <CardTitle>Profile</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  <CardTitle>Profile</CardTitle>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openEditProfileDialog}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit Profile
+                </Button>
               </div>
               <CardDescription>Your account information</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center gap-4">
                 <Avatar className="h-20 w-20">
-                  <AvatarImage src={user?.image || undefined} alt={user?.name} />
+                  <AvatarImage src={avatarUrl} alt={user?.name} />
                   <AvatarFallback className="text-lg">
                     {user?.name ? getInitials(user.name) : "U"}
                   </AvatarFallback>
@@ -341,6 +469,106 @@ function AccountPage() {
                 </>
               ) : (
                 "Change Password"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Profile Dialog */}
+      <Dialog open={editProfileDialogOpen} onOpenChange={setEditProfileDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Profile</DialogTitle>
+            <DialogDescription>
+              Update your profile information.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Avatar Section */}
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative">
+                <Avatar className="h-24 w-24">
+                  <AvatarImage 
+                    src={avatarPreview || avatarUrl} 
+                    alt={user?.name} 
+                  />
+                  <AvatarFallback className="text-xl">
+                    {editName ? getInitials(editName) : user?.name ? getInitials(user.name) : "U"}
+                  </AvatarFallback>
+                </Avatar>
+                {avatarPreview && (
+                  <button
+                    onClick={clearAvatarSelection}
+                    className="bg-destructive text-destructive-foreground absolute -right-1 -top-1 rounded-full p-1"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  {avatarPreview ? "Change Photo" : "Upload Photo"}
+                </Button>
+              </div>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                onChange={handleAvatarChange}
+              />
+              <p className="text-muted-foreground text-xs">
+                JPEG, PNG, GIF, or WebP. Max 5MB.
+              </p>
+            </div>
+
+            {/* Name Field */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Enter your name"
+              />
+            </div>
+
+            {/* Email (read-only) */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input
+                id="edit-email"
+                value={user?.email || ""}
+                disabled
+                className="bg-muted"
+              />
+              <p className="text-muted-foreground text-xs">
+                Email cannot be changed.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditProfileDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateProfile} disabled={updatingProfile}>
+              {updatingProfile ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
               )}
             </Button>
           </DialogFooter>

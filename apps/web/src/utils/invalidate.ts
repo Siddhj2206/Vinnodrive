@@ -14,7 +14,8 @@ type StorageQueryType =
   | "listTrash" 
   | "getQuota" 
   | "getStats"
-  | "getSharedFiles";
+  | "getSharedFiles"
+  | "getAvatarUrl";
 
 /**
  * Extract the procedure path from a tRPC query key.
@@ -119,4 +120,12 @@ export const StorageInvalidations = {
   /** After toggling public sharing */
   afterToggleShare: (qc: QueryClient) => 
     invalidateStorageQueries(qc, ["listFiles"]),
+
+  /** After moving files/folders to a different location */
+  afterFileMove: (qc: QueryClient) => 
+    invalidateStorageQueries(qc, ["listFiles", "listFolders"]),
+
+  /** After updating avatar */
+  afterAvatarUpdate: (qc: QueryClient) => 
+    invalidateStorageQueries(qc, ["getAvatarUrl"]),
 } as const;
