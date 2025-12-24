@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/lib/auth-client";
+import { formatBytes } from "@/lib/utils";
 import { StorageInvalidations } from "@/utils/invalidate";
 import { useTRPC } from "@/utils/trpc";
 
@@ -43,14 +44,6 @@ export const Route = createFileRoute("/dashboard/account")({
     );
   },
 });
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
 
 function AccountPage() {
   const { session } = Route.useRouteContext();
@@ -216,7 +209,7 @@ function AccountPage() {
           throw new Error("Failed to upload avatar");
         }
 
-        imageUrl = avatarUrl;
+        imageUrl = avatarUrl ?? undefined;
       }
 
       // Update user profile

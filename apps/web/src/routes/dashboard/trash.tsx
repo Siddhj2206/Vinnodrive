@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { DashboardHeader } from "@/components/dashboard/header";
 import { StorageInvalidations } from "@/utils/invalidate";
+import { formatBytes, formatDate } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,23 +30,6 @@ export const Route = createFileRoute("/dashboard/trash")({
     );
   },
 });
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
-
-function formatDate(date: Date | string | null): string {
-  if (!date) return "--";
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function TrashView() {
   const trpc = useTRPC();

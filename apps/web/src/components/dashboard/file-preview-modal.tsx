@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Download, File, Loader2, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { formatBytes } from "@/lib/utils";
 import { useTRPC } from "@/utils/trpc";
 
 interface FilePreviewModalProps {
@@ -20,14 +21,6 @@ interface FilePreviewModalProps {
     size: number;
     contentType: string | null;
   } | null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
 function getPreviewType(contentType: string | null): "image" | "video" | "audio" | "pdf" | "text" | "none" {
@@ -60,31 +53,31 @@ function FilePreviewContent({
   
   const previewType = getPreviewType(contentType);
   
-  // Load text content if needed
-  const loadTextContent = async () => {
+  // Load text content when component mounts (if it's a text file)
+  useEffect(() => {
+    if (previewType !== "text") return;
     if (textContent !== null || textLoading) return;
     
-    setTextLoading(true);
-    setTextError(null);
-    
-    try {
-      const response = await fetch(downloadUrl);
-      if (!response.ok) throw new Error("Failed to fetch file");
+    const loadTextContent = async () => {
+      setTextLoading(true);
+      setTextError(null);
       
-      const text = await response.text();
-      // Limit text preview to first 50KB
-      setTextContent(text.slice(0, 50000) + (text.length > 50000 ? "\n\n... (truncated)" : ""));
-    } catch (err) {
-      setTextError(err instanceof Error ? err.message : "Failed to load text content");
-    } finally {
-      setTextLoading(false);
-    }
-  };
-  
-  // Load text content on mount if it's a text file
-  if (previewType === "text" && textContent === null && !textLoading && !textError) {
+      try {
+        const response = await fetch(downloadUrl);
+        if (!response.ok) throw new Error("Failed to fetch file");
+        
+        const text = await response.text();
+        // Limit text preview to first 50KB
+        setTextContent(text.slice(0, 50000) + (text.length > 50000 ? "\n\n... (truncated)" : ""));
+      } catch (err) {
+        setTextError(err instanceof Error ? err.message : "Failed to load text content");
+      } finally {
+        setTextLoading(false);
+      }
+    };
+    
     loadTextContent();
-  }
+  }, [previewType, downloadUrl, textContent, textLoading]);
   
   switch (previewType) {
     case "image":

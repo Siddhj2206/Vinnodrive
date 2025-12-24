@@ -243,10 +243,6 @@ Opens a web UI at http://localhost:4983 to browse and edit your database.
 2. Export from `packages/api/src/routers/index.ts`
 3. Use in frontend via `trpc.routerName.procedureName.useQuery()` or `.useMutation()`
 
-## License
-
-MIT
-
 ---
 
 Built with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack)

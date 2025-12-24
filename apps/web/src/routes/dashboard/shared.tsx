@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { DashboardHeader } from "@/components/dashboard/header";
 import { Button } from "@/components/ui/button";
+import { formatBytes, formatDate, copyToClipboard } from "@/lib/utils";
 import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/dashboard/shared")({
@@ -17,22 +18,6 @@ export const Route = createFileRoute("/dashboard/shared")({
     );
   },
 });
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
-
-function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function SharedView() {
   const trpc = useTRPC();
@@ -50,11 +35,15 @@ function SharedView() {
     ? allSharedFiles.filter((file) => file.name.toLowerCase().includes(searchLower))
     : allSharedFiles;
 
-  const copyShareLink = (shareId: string | null) => {
+  const copyShareLink = async (shareId: string | null) => {
     if (!shareId) return;
     const shareUrl = `${window.location.origin}/share/${shareId}`;
-    navigator.clipboard.writeText(shareUrl);
-    toast.success("Share link copied to clipboard");
+    const success = await copyToClipboard(shareUrl);
+    if (success) {
+      toast.success("Share link copied to clipboard");
+    } else {
+      toast.error("Failed to copy share link");
+    }
   };
 
   return (

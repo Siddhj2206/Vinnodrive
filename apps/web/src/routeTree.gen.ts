@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TodosRouteImport } from './routes/todos'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
@@ -20,11 +19,6 @@ import { Route as DashboardSharedRouteImport } from './routes/dashboard/shared'
 import { Route as DashboardAccountRouteImport } from './routes/dashboard/account'
 import { Route as DashboardFolderFolderIdRouteImport } from './routes/dashboard/folder/$folderId'
 
-const TodosRoute = TodosRouteImport.update({
-  id: '/todos',
-  path: '/todos',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -75,7 +69,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
-  '/todos': typeof TodosRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/shared': typeof DashboardSharedRoute
   '/dashboard/trash': typeof DashboardTrashRoute
@@ -86,7 +79,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/todos': typeof TodosRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/shared': typeof DashboardSharedRoute
   '/dashboard/trash': typeof DashboardTrashRoute
@@ -99,7 +91,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
-  '/todos': typeof TodosRoute
   '/dashboard/account': typeof DashboardAccountRoute
   '/dashboard/shared': typeof DashboardSharedRoute
   '/dashboard/trash': typeof DashboardTrashRoute
@@ -113,7 +104,6 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/login'
-    | '/todos'
     | '/dashboard/account'
     | '/dashboard/shared'
     | '/dashboard/trash'
@@ -124,7 +114,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
-    | '/todos'
     | '/dashboard/account'
     | '/dashboard/shared'
     | '/dashboard/trash'
@@ -136,7 +125,6 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/login'
-    | '/todos'
     | '/dashboard/account'
     | '/dashboard/shared'
     | '/dashboard/trash'
@@ -149,19 +137,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRouteWithChildren
   LoginRoute: typeof LoginRoute
-  TodosRoute: typeof TodosRoute
   ShareShareIdRoute: typeof ShareShareIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/todos': {
-      id: '/todos'
-      path: '/todos'
-      fullPath: '/todos'
-      preLoaderRoute: typeof TodosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -252,7 +232,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRouteWithChildren,
   LoginRoute: LoginRoute,
-  TodosRoute: TodosRoute,
   ShareShareIdRoute: ShareShareIdRoute,
 }
 export const routeTree = rootRouteImport

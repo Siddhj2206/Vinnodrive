@@ -21,6 +21,7 @@ import { DashboardHeader } from "@/components/dashboard/header";
 import { MoveDialog } from "@/components/dashboard/move-dialog";
 import { FilePreviewModal } from "@/components/dashboard/file-preview-modal";
 import { StorageInvalidations } from "@/utils/invalidate";
+import { formatBytes, formatDate, copyToClipboard } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,22 +64,6 @@ export const Route = createFileRoute("/dashboard/")({
     ]);
   },
 });
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
-
-function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function DashboardIndex() {
   const trpc = useTRPC();
@@ -234,15 +219,25 @@ function DashboardIndex() {
 
   const handleTogglePublic = (isPublic: boolean) => {
     if (!shareItem) return;
-    togglePublicMutation.mutate({ id: shareItem.id, isPublic });
-    setShareItem({ ...shareItem, isPublic });
+    togglePublicMutation.mutate(
+      { id: shareItem.id, isPublic },
+      {
+        onSuccess: () => {
+          setShareItem((prev) => (prev ? { ...prev, isPublic } : null));
+        },
+      }
+    );
   };
 
-  const copyShareLink = () => {
+  const copyShareLink = async () => {
     if (!shareItem?.publicShareId) return;
     const shareUrl = `${window.location.origin}/share/${shareItem.publicShareId}`;
-    navigator.clipboard.writeText(shareUrl);
-    toast.success("Share link copied to clipboard");
+    const success = await copyToClipboard(shareUrl);
+    if (success) {
+      toast.success("Share link copied to clipboard");
+    } else {
+      toast.error("Failed to copy share link");
+    }
   };
 
   const stats = statsQuery.data;
@@ -354,7 +349,7 @@ function DashboardIndex() {
               <div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Folder options">
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -409,6 +404,7 @@ function DashboardIndex() {
                 />
                 <button
                   className="hover:underline text-left truncate"
+                  aria-label={`Preview ${file.name}`}
                   onClick={() => {
                     setPreviewFile({
                       id: file.id,
@@ -439,7 +435,7 @@ function DashboardIndex() {
               <div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="File options">
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -673,7 +669,7 @@ function DashboardIndex() {
                     readOnly
                     value={`${window.location.origin}/share/${shareItem.publicShareId}`}
                   />
-                  <Button variant="outline" onClick={copyShareLink}>
+                  <Button variant="outline" onClick={copyShareLink} aria-label="Copy share link">
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>

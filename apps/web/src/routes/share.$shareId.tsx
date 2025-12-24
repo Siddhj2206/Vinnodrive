@@ -7,27 +7,12 @@ import { PublicFilePreview } from "@/components/dashboard/file-preview-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatBytes, formatDate } from "@/lib/utils";
 import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/share/$shareId")({
   component: SharePage,
 });
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
-
-function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function SharePage() {
   const { shareId } = Route.useParams();

@@ -3,12 +3,17 @@ import * as schema from "@Vinnodrive/db/schema/auth";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 
+const corsOrigin = process.env.CORS_ORIGIN;
+if (!corsOrigin) {
+  throw new Error("CORS_ORIGIN environment variable is required");
+}
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: schema,
   }),
-  trustedOrigins: [process.env.CORS_ORIGIN || ""],
+  trustedOrigins: [corsOrigin],
   emailAndPassword: {
     enabled: true,
   },

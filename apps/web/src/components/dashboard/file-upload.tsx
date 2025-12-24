@@ -326,6 +326,7 @@ export function FileUpload({ folderId, onComplete }: FileUploadProps) {
                     size="icon"
                     className="h-6 w-6 flex-shrink-0"
                     onClick={() => removeFile(uploadFile.id)}
+                    aria-label="Remove file"
                   >
                     <X className="h-4 w-4" />
                   </Button>

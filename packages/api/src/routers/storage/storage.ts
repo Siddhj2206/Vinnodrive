@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { S3Client } from "bun";
 import { router, protectedProcedure, publicProcedure } from "../../index";
+import { getEnv } from "../../env";
 import { db } from "@Vinnodrive/db";
 import {
   files,
@@ -12,13 +13,16 @@ import {
 import { eq, sql, and, desc, isNull, isNotNull, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
+// Get validated environment
+const env = getEnv();
+
 // Cloudflare R2 Client configuration (S3-compatible)
 // Endpoint format: https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 const s3 = new S3Client({
-  accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
-  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
-  bucket: process.env.R2_BUCKET_NAME || "vinnodrive",
-  endpoint: process.env.R2_ENDPOINT || "",
+  accessKeyId: env.R2_ACCESS_KEY_ID,
+  secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+  bucket: env.R2_BUCKET_NAME,
+  endpoint: env.R2_ENDPOINT,
   region: "auto", // R2 uses "auto" for region
 });
 
@@ -26,6 +30,56 @@ const s3 = new S3Client({
 const DEFAULT_STORAGE_LIMIT = 1 * 1024 * 1024 * 1024; // 1GB
 const DEFAULT_RATE_LIMIT = 2; // 2 API calls per second
 const RATE_LIMIT_WINDOW_MS = 1000; // 1 second window
+const MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024; // 10GB max file size
+
+// Validation schemas
+/**
+ * Filename validation:
+ * - 1-255 characters
+ * - Cannot contain path traversal characters (/, \, ..)
+ * - Cannot contain null bytes
+ * - Cannot be reserved names on Windows (CON, PRN, AUX, etc.)
+ */
+const filenameSchema = z
+  .string()
+  .min(1, "Filename is required")
+  .max(255, "Filename must be 255 characters or less")
+  .regex(
+    /^[^\/\\:\*\?"<>\|\x00]+$/,
+    "Filename contains invalid characters"
+  )
+  .refine(
+    (name) => !name.includes(".."),
+    "Filename cannot contain path traversal sequences"
+  )
+  .refine(
+    (name) =>
+      !/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i.test(name),
+    "Filename is a reserved system name"
+  );
+
+/**
+ * Content type validation:
+ * - Must be a valid MIME type format (type/subtype)
+ * - Optionally with parameters (e.g., charset=utf-8)
+ */
+const contentTypeSchema = z
+  .string()
+  .regex(
+    /^[a-z]+\/[a-z0-9.+-]+(\s*;\s*[a-z0-9-]+=\S+)*$/i,
+    "Invalid MIME type format"
+  )
+  .optional();
+
+/**
+ * File size validation:
+ * - Must be positive
+ * - Maximum 10GB
+ */
+const fileSizeSchema = z
+  .number()
+  .positive("File size must be positive")
+  .max(MAX_FILE_SIZE, `File size cannot exceed ${MAX_FILE_SIZE / (1024 * 1024 * 1024)}GB`);
 
 // Helper: Get user ID from session
 const getUserId = (ctx: { session: { user: { id: string } } }) =>
@@ -168,10 +222,10 @@ export const storageRouter = router({
   getUploadPresignedUrl: rateLimitedProcedure
     .input(
       z.object({
-        filename: z.string().min(1).max(255),
-        size: z.number().positive(),
-        hash: z.string().length(64), // SHA-256 hex
-        contentType: z.string().optional(),
+        filename: filenameSchema,
+        size: fileSizeSchema,
+        hash: z.string().regex(/^[a-f0-9]{64}$/i, "Invalid SHA-256 hash"),
+        contentType: contentTypeSchema,
         folderId: z.string().uuid().optional(),
       })
     )
@@ -237,10 +291,10 @@ export const storageRouter = router({
   confirmUpload: rateLimitedProcedure
     .input(
       z.object({
-        filename: z.string().min(1).max(255),
-        size: z.number().positive(),
-        hash: z.string().length(64),
-        contentType: z.string().optional(),
+        filename: filenameSchema,
+        size: fileSizeSchema,
+        hash: z.string().regex(/^[a-f0-9]{64}$/i, "Invalid SHA-256 hash"),
+        contentType: contentTypeSchema,
         folderId: z.string().uuid().optional(),
       })
     )
@@ -427,7 +481,7 @@ export const storageRouter = router({
   createFolder: rateLimitedProcedure
     .input(
       z.object({
-        name: z.string().min(1).max(255),
+        name: filenameSchema,
         parentId: z.string().uuid().optional(),
       })
     )
@@ -469,7 +523,7 @@ export const storageRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        name: z.string().min(1).max(255),
+        name: filenameSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1129,7 +1183,7 @@ export const storageRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        name: z.string().min(1).max(255),
+        name: filenameSchema,
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1202,7 +1256,7 @@ export const storageRouter = router({
   moveFiles: rateLimitedProcedure
     .input(
       z.object({
-        ids: z.array(z.string().uuid()),
+        ids: z.array(z.string().uuid()).max(100, "Cannot move more than 100 files at once"),
         folderId: z.string().uuid().nullable(),
       })
     )
@@ -1326,7 +1380,7 @@ export const storageRouter = router({
   moveFolders: rateLimitedProcedure
     .input(
       z.object({
-        ids: z.array(z.string().uuid()),
+        ids: z.array(z.string().uuid()).max(100, "Cannot move more than 100 folders at once"),
         parentId: z.string().uuid().nullable(),
       })
     )
@@ -1578,13 +1632,20 @@ export const storageRouter = router({
         })
         .returning();
 
+      if (!newQuota) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create user quota",
+        });
+      }
+
       return {
-        storageUsed: newQuota!.storageUsed,
-        storageLimit: newQuota!.storageLimit,
-        storageUsedFormatted: formatBytes(newQuota!.storageUsed),
-        storageLimitFormatted: formatBytes(newQuota!.storageLimit),
-        usagePercent: (newQuota!.storageUsed / newQuota!.storageLimit) * 100,
-        rateLimit: newQuota!.rateLimit,
+        storageUsed: newQuota.storageUsed,
+        storageLimit: newQuota.storageLimit,
+        storageUsedFormatted: formatBytes(newQuota.storageUsed),
+        storageLimitFormatted: formatBytes(newQuota.storageLimit),
+        usagePercent: (newQuota.storageUsed / newQuota.storageLimit) * 100,
+        rateLimit: newQuota.rateLimit,
       };
     }
 
@@ -1625,23 +1686,17 @@ export const storageRouter = router({
       return {
         url,
         key,
-        avatarUrl: `${process.env.R2_PUBLIC_URL || ""}/${key}`,
+        avatarUrl: env.R2_PUBLIC_URL ? `${env.R2_PUBLIC_URL}/${key}` : null,
       };
     }),
 
   /**
-   * Get presigned URL for viewing an avatar
+   * Get presigned URL for viewing the current user's avatar
    * Returns a presigned download URL for the user's avatar
    */
-  getAvatarUrl: protectedProcedure
-    .input(
-      z.object({
-        userId: z.string().optional(),
-      }).optional()
-    )
-    .query(async ({ ctx, input }) => {
-      const targetUserId = input?.userId || getUserId(ctx);
-      const key = `avatars/${targetUserId}`;
+  getAvatarUrl: protectedProcedure.query(async ({ ctx }) => {
+    const userId = getUserId(ctx);
+    const key = `avatars/${userId}`;
 
       // Check if avatar exists
       const exists = await s3.file(key).exists();

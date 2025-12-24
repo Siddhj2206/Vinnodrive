@@ -1,5 +1,4 @@
 import { protectedProcedure, publicProcedure, router } from "../index";
-import { todoRouter } from "./todo";
 import { storageRouter } from "./storage";
 
 export const appRouter = router({
@@ -12,7 +11,6 @@ export const appRouter = router({
       user: ctx.session.user,
     };
   }),
-  todo: todoRouter,
   storage: storageRouter,
 });
 export type AppRouter = typeof appRouter;
